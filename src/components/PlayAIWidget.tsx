@@ -176,15 +176,16 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
         const setupMessage = {
           type: 'setup',
           apiKey: process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY,
-          outputFormat: 'raw',  // Request raw PCM data
+          outputFormat: 'raw',
           outputSampleRate: 44100,
           inputEncoding: 'media-container',
-          outputBitDepth: 32,   // 32-bit float PCM
-          outputChannels: 1,     // Mono audio
-          timeoutSeconds: 60,     // Increase timeout to 60 seconds
-          noActivityTimeout: 60,  // Add no activity timeout
-          silenceThreshold: -50,  // Lower silence threshold
-          keepAlive: true        // Enable keep-alive
+          outputBitDepth: 32,
+          outputChannels: 1,
+          timeoutSeconds: 60,
+          noActivityTimeout: 60,
+          silenceThreshold: -50,
+          keepAlive: true,
+          origin: typeof window !== 'undefined' ? window.location.origin : 'https://your-vercel-domain.vercel.app'
         };
         console.log('Setup message:', setupMessage);
         wsRef.current.send(JSON.stringify(setupMessage));
@@ -354,15 +355,30 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
 
     setIsLoading(true)
     setError(null)
-    console.log('Starting agent creation with PDF content length:', pdfContent.length)
+    
+    const apiKey = process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY;
+    const userId = process.env.NEXT_PUBLIC_PLAY_AI_USER_ID;
+
+    if (!apiKey || !userId) {
+      setError('Missing API credentials');
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('Starting agent creation with:', {
+      pdfContentLength: pdfContent.length,
+      hasApiKey: !!apiKey,
+      hasUserId: !!userId
+    });
 
     try {
       const options = {
         method: 'POST',
         headers: {
-          'content-type': 'application/json',
-          'AUTHORIZATION': process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY || '',
-          'X-USER-ID': process.env.NEXT_PUBLIC_PLAY_AI_USER_ID || ''
+          'Content-Type': 'application/json',
+          'Authorization': apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}`,
+          'X-User-Id': userId,
+          'Origin': typeof window !== 'undefined' ? window.location.origin : 'https://your-vercel-domain.vercel.app'
         },
         body: JSON.stringify({
           voice: "s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json",
@@ -377,24 +393,33 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
         })
       };
 
-      console.log('Sending request to create agent...')
-      const response = await fetch('https://api.play.ai/api/v1/agents', options)
-      const data = await response.json()
-      console.log('Agent creation response:', data)
+      console.log('Sending request to create agent with headers:', {
+        contentType: options.headers['Content-Type'],
+        authLength: options.headers['Authorization'].length,
+        userIdLength: options.headers['X-User-Id'].length,
+        origin: options.headers['Origin']
+      });
+
+      const response = await fetch('https://api.play.ai/api/v1/agents', options);
+      const responseText = await response.text();
+      console.log('Raw API Response:', responseText);
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to create agent')
+        throw new Error(responseText || 'Failed to create agent');
       }
 
-      setCurrentAgentId(data.id)
-      setupWebSocket(data.id)
+      const data = JSON.parse(responseText);
+      console.log('Agent creation response:', data);
+
+      setCurrentAgentId(data.id);
+      setupWebSocket(data.id);
     } catch (err) {
-      console.error('Error creating agent:', err)
-      setError('Failed to create agent. Please try again.')
+      console.error('Error creating agent:', err);
+      setError('Failed to create agent. Please try again.');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const toggleRecording = async () => {
     if (isRecording) {

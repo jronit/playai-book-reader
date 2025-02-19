@@ -5,6 +5,7 @@ const API_KEY = 'ak-103f9a8168df4f9fa8e3b336b1997082'
 const USER_ID = 'irzkK8askqMXXt0WCpEm8Y209xa2'
 const API_URL = 'https://api.play.ai/v1/tts/stream'
 const AGENT_API_URL = 'https://api.play.ai/v1/agents'
+const WEBSOCKET_URL = 'wss://api.play.ai/v1/talk'
 
 // Maximum length for prompt to prevent API errors
 const MAX_PROMPT_LENGTH = 1000
@@ -150,45 +151,64 @@ export async function getAgent(agentId: string) {
 
 export async function createAgent(pdfContent: string) {
   try {
-    console.log('Creating new agent with PDF content length:', pdfContent.length)
+    const apiKey = process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY;
+    const userId = process.env.NEXT_PUBLIC_PLAY_AI_USER_ID;
+
+    if (!apiKey || !userId) {
+      console.error('Missing environment variables:', {
+        hasApiKey: !!apiKey,
+        hasUserId: !!userId
+      });
+      throw new Error('Missing API credentials');
+    }
+
+    console.log('Creating new agent with:', {
+      pdfContentLength: pdfContent.length,
+      apiKeyLength: apiKey.length,
+      userIdLength: userId.length,
+      endpoint: AGENT_API_URL
+    });
     
-    const response = await fetch('https://api.play.ai/api/v1/agents', {
+    const response = await fetch(AGENT_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
-        'X-User-Id': USER_ID,
+        'Authorization': apiKey,
+        'X-User-Id': userId,
+        'Origin': typeof window !== 'undefined' ? window.location.origin : 'https://your-vercel-domain.vercel.app'
       },
       body: JSON.stringify({
-        voice: 's3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json',
+        voice: "s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json",
         voiceSpeed: 1.2,
         displayName: "PDF Assistant",
         description: "An AI assistant that helps understand PDF content",
-        greeting: "Hello! I'm here to help you understand the PDF content. What would you like to know?",
+        greeting: "Hi! I can help answer questions about your PDF document, just press speak and ask me anything.",
         prompt: "You are an AI assistant helping users understand PDF content. Answer their questions based on the provided context.",
         criticalKnowledge: pdfContent,
-        visibility: "public",
-        answerOnlyFromCriticalKnowledge: true,
-        llm: null,
+        visibility: "private",
+        answerOnlyFromCriticalKnowledge: true
       }),
-    })
+    });
+
+    const responseText = await response.text();
+    console.log('Raw API Response:', responseText);
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Agent Creation Response:', {
+      console.error('Agent Creation Error:', {
         status: response.status,
         statusText: response.statusText,
-        error: errorText,
-      })
-      throw new Error(`Failed to create agent: ${response.status} - ${errorText}`)
+        headers: Object.fromEntries(response.headers.entries()),
+        body: responseText
+      });
+      throw new Error(`Failed to create agent: ${response.status} - ${responseText}`);
     }
 
-    const data = await response.json()
-    console.log('Agent created successfully:', data)
-    return data
+    const data = JSON.parse(responseText);
+    console.log('Agent created successfully:', data);
+    return data;
   } catch (error) {
-    console.error('Error creating agent:', error)
-    throw error
+    console.error('Error creating agent:', error);
+    throw error;
   }
 }
 
