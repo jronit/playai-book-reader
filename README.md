@@ -4,7 +4,7 @@ https://playai-book-reader-ronitjain5.replit.app/
 
 This web application converts your PDFs and reads them aloud using PlayAI's voice Text To Speech API. Moreover, using PlayAI's Voice Agent's the user can chat with the application to ask questions pertaining to the uploaded document. To use, start off by uploading a PDF in the top left of the page. Then, you can select a voice to read over the PDF. After selecting a voice, press the "Load Pages to Read" button. This will start process of parsing the PDF document and feeding it to the TTS model so that your PDF will be read aloud by the voice you selected. This may take a while so be patient, but you can track its progress with the percentage progress bar. After that you can simply play the audio to hear your PDF read aloud to you. You can pause, move pages, and even change the speed of the voice. 
 
-In addition to the audio playback, you can initiate a chat with a Voice Agent to ask the application questions about the PDF. Simply press "Create Agent" to start the process the "Speak" to actually talk. Press "Stop" or "Stop Agent" to close the interaction. 
+In addition to the audio playback, you can initiate a chat with a Voice Agent to ask the application questions about the PDF. Simply press "Create Agent" to start the process adn then press "Speak" to actually talk. Press "Stop" or "Stop Agent" to close the interaction. 
 
 ## Features
 
