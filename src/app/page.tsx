@@ -109,7 +109,7 @@ export default function Home() {
             {/* Voice Selection */}
             <section className="flex-1 bg-white rounded-lg shadow-sm border border-indigo-100 p-4 overflow-auto">
               <h2 className="text-sm font-semibold text-indigo-900 mb-3">
-                Select Voice
+                Select Voice to Read the PDF
               </h2>
               <VoiceSelector
                 voices={sampleVoices}

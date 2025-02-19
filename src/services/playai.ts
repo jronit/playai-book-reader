@@ -99,7 +99,7 @@ export async function createOrUpdateAgent(agentId: string, prompt: string) {
         voiceSpeed: 1.0,
         displayName: "PDF Reader Agent",
         description: "An AI agent that helps read and understand PDFs",
-        greeting: "Hello! I'm here to help you with your PDF document.",
+        greeting: "Hi! I can help answer questions about your PDF document, just press speak and ask me anything.",
         prompt: truncatedPrompt,
         criticalKnowledge: "",
         visibility: "public",

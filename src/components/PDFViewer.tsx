@@ -27,6 +27,8 @@ export default function PDFViewer({
   const [containerHeight, setContainerHeight] = useState<number>(0)
   const pdfDocRef = useRef<any>(null)
   const extractionTimeout = useRef<NodeJS.Timeout>()
+  const pageCache = useRef<Map<number, any>>(new Map())
+  const textCache = useRef<Map<number, string>>(new Map())
 
   // Reference to measure the container width and height
   const measureContainer = (node: HTMLDivElement) => {
@@ -51,14 +53,45 @@ export default function PDFViewer({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Preload adjacent pages
+  const preloadAdjacentPages = async () => {
+    if (!pdfDocRef.current) return;
+
+    const pagesToPreload = [
+      currentPage - 1,
+      currentPage + 1
+    ].filter(page => page > 0 && page <= totalPages);
+
+    for (const pageNum of pagesToPreload) {
+      if (!pageCache.current.has(pageNum)) {
+        try {
+          const page = await pdfDocRef.current.getPage(pageNum);
+          pageCache.current.set(pageNum, page);
+          // Pre-extract text while we're at it
+          if (onPageTextContent && !textCache.current.has(pageNum)) {
+            extractTextFromPage(pageNum, page);
+          }
+        } catch (error) {
+          console.error(`Error preloading page ${pageNum}:`, error);
+        }
+      }
+    }
+  };
+
   // Load PDF document once
   useEffect(() => {
     if (pdfUrl) {
       setLoading(true)
+      // Clear caches when loading new PDF
+      pageCache.current.clear();
+      textCache.current.clear();
+      
       pdfjs.getDocument(pdfUrl).promise
         .then(pdf => {
           pdfDocRef.current = pdf
           setLoading(false)
+          // Preload first page and adjacent pages
+          preloadAdjacentPages();
         })
         .catch(error => {
           console.error('Error loading PDF:', error)
@@ -74,34 +107,53 @@ export default function PDFViewer({
     }
   }, [pdfUrl])
 
-  // Extract text with debounce
+  // Function to extract text from a page
+  const extractTextFromPage = async (pageNum: number, pageObj?: any) => {
+    if (!onPageTextContent) return;
+
+    try {
+      // Check if we already have the text cached
+      if (textCache.current.has(pageNum)) {
+        onPageTextContent(textCache.current.get(pageNum)!);
+        return;
+      }
+
+      const page = pageObj || (pageCache.current.get(pageNum) || await pdfDocRef.current.getPage(pageNum));
+      if (!pageCache.current.has(pageNum)) {
+        pageCache.current.set(pageNum, page);
+      }
+
+      const textContent = await page.getTextContent()
+      
+      // Improved text extraction with better formatting
+      const text = textContent.items
+        .map((item: any) => item.str)
+        .join(' ')
+        .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+        .replace(/[\n\r]+/g, ' ') // Replace newlines with space
+        .trim();
+
+      if (text.length > 0) {
+        textCache.current.set(pageNum, text);
+        onPageTextContent(text);
+      }
+    } catch (error) {
+      console.error('Error extracting text:', error)
+    }
+  }
+
+  // Extract text with minimal debounce when page changes
   useEffect(() => {
     if (extractionTimeout.current) {
       clearTimeout(extractionTimeout.current)
     }
 
-    extractionTimeout.current = setTimeout(async () => {
+    extractionTimeout.current = setTimeout(() => {
       if (!pdfDocRef.current || !onPageTextContent) return;
-      
-      try {
-        const page = await pdfDocRef.current.getPage(currentPage)
-        const textContent = await page.getTextContent()
-        
-        // Improved text extraction with better formatting
-        const text = textContent.items
-          .map((item: any) => item.str)
-          .join(' ')
-          .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-          .replace(/[\n\r]+/g, ' ') // Replace newlines with space
-          .trim();
-
-        if (text.length > 0) {
-          onPageTextContent(text)
-        }
-      } catch (error) {
-        console.error('Error extracting text:', error)
-      }
-    }, 300) // Reduced debounce time for faster response
+      extractTextFromPage(currentPage);
+      // Preload adjacent pages after current page is loaded
+      preloadAdjacentPages();
+    }, 100) // Reduced debounce time for faster response
   }, [currentPage, onPageTextContent])
 
   const handleLoadError = (error: Error) => {
@@ -150,7 +202,7 @@ export default function PDFViewer({
       <div 
         ref={measureContainer}
         className="pdf-container flex-1 overflow-auto relative flex justify-center items-start py-1"
-        style={{ maxHeight: 'calc(100vh - 300px)' }} // Further reduced height
+        style={{ maxHeight: 'calc(100vh - 300px)' }}
       >
         <Document
           file={pdfUrl}
@@ -167,59 +219,71 @@ export default function PDFViewer({
               </div>
             </div>
           }
-          className="flex justify-center"
+          className="flex justify-center w-full"
         >
-          <div className="shadow-lg bg-white p-1"> {/* Reduced padding */}
+          <div className="shadow-lg bg-white p-1">
             <Page
               pageNumber={currentPage}
               width={pageWidth}
-              className="max-h-[calc(100vh-400px)]" // Further reduced max height
+              className="max-h-[calc(100vh-400px)]"
               renderTextLayer={true}
               renderAnnotationLayer={false}
               loading={null}
-              scale={0.8} // Reduced scale from 0.9 to 0.8
+              scale={0.8}
+              canvasRef={(canvas) => {
+                if (canvas) {
+                  // Force better quality rendering
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                  }
+                }
+              }}
             />
           </div>
         </Document>
       </div>
 
       {/* Navigation controls */}
-      <div className="mt-4 flex items-center justify-between">
-        {/* Previous button */}
-        <button
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage <= 1}
-          className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-            ${currentPage > 1
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Previous</span>
-        </button>
+      <div className="flex justify-center w-full">
+        <div className="mt-4 flex items-center justify-center space-x-4" style={{ width: pageWidth }}>
+          {/* Previous button */}
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage <= 1}
+            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+              ${currentPage > 1
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <span>Previous</span>
+          </button>
 
-        <span className="text-sm text-indigo-600">
-          Page {currentPage} of {totalPages}
-        </span>
+          <span className="text-sm text-indigo-600 min-w-[100px] text-center">
+            Page {currentPage} of {totalPages}
+          </span>
 
-        {/* Next button */}
-        <button
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage >= totalPages}
-          className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-            ${currentPage < totalPages
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-        >
-          <span>Next</span>
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+          {/* Next button */}
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages}
+            className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+              ${currentPage < totalPages
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+          >
+            <span>Next</span>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   )

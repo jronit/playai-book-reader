@@ -73,6 +73,7 @@ export default function AudioPlayer({
     try {
       setIsLoading(true)
       setError(null)
+      setLoadingProgress(0)
       
       // Clear existing audio URLs
       audioUrls.forEach(url => URL.revokeObjectURL(url))
@@ -81,23 +82,34 @@ export default function AudioPlayer({
       const newAudioUrls: string[] = []
       let successCount = 0
 
+      // Each page has 2 steps: text extraction and audio synthesis
+      const totalSteps = totalPages * 2
+      let completedSteps = 0
+
       // Load audio for all pages
       for (let page = 1; page <= totalPages; page++) {
         try {
-          setLoadingProgress(Math.round((page / totalPages) * 100))
           console.log(`Processing page ${page} of ${totalPages}`)
           
-          // Extract text from page
+          // Step 1: Extract text
+          setLoadingProgress(Math.round((completedSteps / totalSteps) * 100))
           const text = await extractTextFromPDF(pdfUrl, page)
+          completedSteps++
+          setLoadingProgress(Math.round((completedSteps / totalSteps) * 100))
           
           if (!text.trim()) {
             console.warn(`No text found on page ${page}`)
             newAudioUrls.push('')
+            completedSteps++ // Count this as completing the audio step
             continue
           }
 
-          // Get audio from API
+          // Step 2: Generate audio
+          setLoadingProgress(Math.round((completedSteps / totalSteps) * 100))
           const audioBlob = await synthesizeSpeech(text, selectedVoice.value)
+          completedSteps++
+          setLoadingProgress(Math.round((completedSteps / totalSteps) * 100))
+
           if (!audioBlob.size) {
             throw new Error('Received empty audio response')
           }
@@ -109,6 +121,7 @@ export default function AudioPlayer({
         } catch (pageError) {
           console.error(`Error processing page ${page}:`, pageError)
           newAudioUrls.push('')
+          completedSteps++ // Count errors as completing both steps
           // Continue with next page instead of failing completely
         }
       }
@@ -119,13 +132,14 @@ export default function AudioPlayer({
 
       setAudioUrls(newAudioUrls)
       console.log(`Successfully loaded ${successCount} of ${totalPages} pages`)
+      setLoadingProgress(100)
       
       // Set up first page audio
       if (audioRef.current && newAudioUrls[currentPage - 1]) {
         audioRef.current.src = newAudioUrls[currentPage - 1]
         audioRef.current.playbackRate = playbackSpeed
       }
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message || 'Failed to load audio. Please try again.')
       console.error('Loading error:', err)
     } finally {
@@ -193,7 +207,7 @@ export default function AudioPlayer({
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
               />
             </svg>
-            <span>Load All Pages</span>
+            <span>Load Pages to Read</span>
           </>
         )}
       </button>

@@ -34,7 +34,7 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
   const [error, setError] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
-  const [transcript, setTranscript] = useState<{ user: string; agent: string }>({ user: '', agent: '' })
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   
   // Refs for managing WebSocket and audio
   const wsRef = useRef<WebSocket | null>(null)
@@ -44,6 +44,14 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
   const audioBufferSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const audioQueueRef = useRef<string[]>([])
   const isPlayingRef = useRef(false)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   // Initialize AudioContext
   useEffect(() => {
@@ -172,7 +180,11 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
           outputSampleRate: 44100,
           inputEncoding: 'media-container',
           outputBitDepth: 32,   // 32-bit float PCM
-          outputChannels: 1     // Mono audio
+          outputChannels: 1,     // Mono audio
+          timeoutSeconds: 60,     // Increase timeout to 60 seconds
+          noActivityTimeout: 60,  // Add no activity timeout
+          silenceThreshold: -50,  // Lower silence threshold
+          keepAlive: true        // Enable keep-alive
         };
         console.log('Setup message:', setupMessage);
         wsRef.current.send(JSON.stringify(setupMessage));
@@ -213,18 +225,42 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
             break;
           case 'voiceActivityStart':
             console.log('User started speaking');
-            setTranscript(prev => ({ ...prev, user: '' }));
+            setMessages(prev => {
+              // If the last message is from the user, update it
+              // Otherwise, add a new user message
+              if (prev.length > 0 && prev[prev.length - 1].role === 'user') {
+                return [...prev.slice(0, -1), { role: 'user', content: '' }];
+              }
+              return [...prev, { role: 'user', content: '' }];
+            });
             break;
           case 'voiceActivityEnd':
             console.log('User stopped speaking');
             break;
           case 'onUserTranscript':
             console.log('User transcript:', message.message);
-            setTranscript(prev => ({ ...prev, user: message.message }));
+            setMessages(prev => {
+              // If the last message is from the user, update it
+              // Otherwise, add a new user message
+              if (prev.length > 0 && prev[prev.length - 1].role === 'user') {
+                return [...prev.slice(0, -1), { role: 'user', content: message.message }];
+              }
+              return [...prev, { role: 'user', content: message.message }];
+            });
             break;
           case 'onAgentTranscript':
             console.log('Agent transcript:', message.message);
-            setTranscript(prev => ({ ...prev, agent: prev.agent + ' ' + message.message }));
+            setMessages(prev => {
+              // If the last message is from the assistant, append to it
+              // Otherwise, add a new assistant message
+              if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                return [...prev.slice(0, -1), { 
+                  role: 'assistant', 
+                  content: prev[prev.length - 1].content + ' ' + message.message 
+                }];
+              }
+              return [...prev, { role: 'assistant', content: message.message }];
+            });
             break;
           default:
             console.log('Unknown message type:', message.type, message);
@@ -237,12 +273,27 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
 
     wsRef.current.onerror = (error) => {
       console.error('WebSocket error:', error);
-      setError('WebSocket connection error');
+      // If there's a timeout error, try to reconnect
+      if (wsRef.current?.readyState === WebSocket.CLOSED) {
+        console.log('Attempting to reconnect...');
+        setupWebSocket(agentId);
+      }
+      setError('Connection error. Attempting to reconnect...');
     };
 
     wsRef.current.onclose = (event) => {
       console.log('WebSocket closed:', event.code, event.reason);
+      // If it's a timeout closure (code 1006), try to reconnect
+      if (event.code === 1006 && currentAgentId) {
+        console.log('Connection timed out, attempting to reconnect...');
+        setTimeout(() => {
+          setupWebSocket(agentId);
+        }, 1000);
+      }
     };
+
+    // Remove keep-alive ping as it's causing issues
+    return () => {};
   };
 
   const startRecording = async () => {
@@ -291,13 +342,8 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-    setIsRecording(false);
+    // Instead of just stopping recording, we'll stop the entire agent
+    stopAgent();
   };
 
   const handleCreateAgent = async () => {
@@ -323,7 +369,7 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
           voiceSpeed: 1.0,
           displayName: "PDF Assistant",
           description: "An AI assistant that helps answer questions about your PDF document",
-          greeting: "Hello! I'm ready to help you with any questions about your PDF document.",
+          greeting: "Hi! I can help answer questions about your PDF document, just press speak and ask me anything.",
           prompt: "You are an AI assistant that helps users understand their PDF documents. When they ask questions, use the provided critical knowledge (PDF content) to give accurate and helpful answers. If the information isn't in the PDF content, let them know.",
           criticalKnowledge: pdfContent,
           visibility: "private",
@@ -358,23 +404,65 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
     }
   };
 
+  const stopAgent = () => {
+    // Close WebSocket connection
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    
+    // Stop recording if it's active
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    
+    // Clear audio queue and stop playback
+    audioQueueRef.current = [];
+    if (audioBufferSourceRef.current) {
+      try {
+        audioBufferSourceRef.current.stop();
+      } catch (e) {
+        console.log('Error stopping audio:', e);
+      }
+      audioBufferSourceRef.current = null;
+    }
+    
+    // Reset all states
+    setCurrentAgentId(null);
+    setMessages([]);
+    isPlayingRef.current = false;
+    setIsRecording(false);
+  };
+
   return (
-    <div className="fixed bottom-4 right-4 flex flex-col items-end space-y-4">
-      {/* Transcript Display */}
-      {(transcript.user || transcript.agent) && (
-        <div className="bg-white rounded-lg shadow-lg p-4 mb-4 w-80 max-h-60 overflow-y-auto">
-          {transcript.user && (
-            <div className="mb-2">
-              <span className="font-semibold text-indigo-600">You:</span>
-              <span className="ml-2">{transcript.user}</span>
-            </div>
-          )}
-          {transcript.agent && (
-            <div>
-              <span className="font-semibold text-purple-600">Assistant:</span>
-              <span className="ml-2">{transcript.agent}</span>
-            </div>
-          )}
+    <div className="fixed bottom-4 right-16 flex flex-col items-end space-y-4">
+      {/* Chat Display */}
+      {messages.length > 0 && (
+        <div 
+          ref={chatContainerRef}
+          className="bg-white rounded-lg shadow-lg p-4 mb-4 w-80 max-h-96 overflow-y-auto scroll-smooth"
+        >
+          <div className="flex flex-col space-y-3">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-lg px-4 py-2 ${
+                    message.role === 'user'
+                      ? 'bg-indigo-600 text-white ml-4'
+                      : 'bg-gray-100 text-gray-800 mr-4'
+                  }`}
+                >
+                  {message.content}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -393,53 +481,65 @@ export default function PlayAIWidget({ currentPage, totalPages, pdfContent }: Pl
       </div>
 
       {/* Create Agent Button */}
-      <button
-        onClick={handleCreateAgent}
-        disabled={isLoading || !pdfContent}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
-          ${isLoading || !pdfContent
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'bg-indigo-600 text-white hover:bg-indigo-700'
-          }`}
-      >
-        {currentAgentId ? 'Create New Agent' : 'Create Agent'}
-      </button>
-
-      {/* Voice Chat Button */}
-      <button
-        onClick={toggleRecording}
-        disabled={isLoading || !currentAgentId}
-        className={`p-3 rounded-full transition-all
-          ${isLoading || !currentAgentId
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : isRecording
-              ? 'bg-red-600 text-white hover:bg-red-700'
+      <div className="flex space-x-2 items-center">
+        <button
+          onClick={handleCreateAgent}
+          disabled={isLoading || !pdfContent}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
+            ${isLoading || !pdfContent
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
               : 'bg-indigo-600 text-white hover:bg-indigo-700'
-          }`}
-      >
-        <svg 
-          className="w-6 h-6" 
-          fill="none" 
-          viewBox="0 0 24 24" 
-          stroke="currentColor"
+            }`}
         >
-          {isRecording ? (
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-            />
-          ) : (
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-            />
-          )}
-        </svg>
-      </button>
+          {currentAgentId ? 'Create New Agent' : 'Create Agent'}
+        </button>
+
+        {currentAgentId && (
+          <button
+            onClick={stopAgent}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-all"
+          >
+            Stop Agent
+          </button>
+        )}
+
+        {/* Voice Chat Button */}
+        <button
+          onClick={toggleRecording}
+          disabled={isLoading || !currentAgentId}
+          className={`px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-all
+            ${isLoading || !currentAgentId
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : isRecording
+                ? 'bg-red-600 text-white hover:bg-red-700'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+        >
+          <svg 
+            className="w-5 h-5" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            {isRecording ? (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
+              />
+            ) : (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+              />
+            )}
+          </svg>
+          <span>{isRecording ? 'Stop' : 'Speak'}</span>
+        </button>
+      </div>
 
       {/* Play.ai Widget Container */}
       <div id="playai-widget" />
