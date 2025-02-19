@@ -42,7 +42,8 @@ In addition to the audio playback, you can initiate a chat with a Voice Agent to
 
 Deployed on Replit @https://playai-book-reader-ronitjain5.replit.app/ 
 
-or can be installed locally 
+# or
+Install locally 
 
 1. Clone the repository:
 \`\`\`bash
