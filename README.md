@@ -1,5 +1,7 @@
 # PlayAI Book Reader
 
+https://playai-book-reader-ronitjain5.replit.app/ 
+
 This web application converts your PDFs and reads them aloud using PlayAI's voice Text To Speech API. Moreover, using PlayAI's Voice Agent's the user can chat with the application to ask questions pertaining to the uploaded document. 
 
 ## Features
@@ -34,8 +36,7 @@ This web application converts your PDFs and reads them aloud using PlayAI's voic
 - WebSocket integration for real-time AI communication
 
 
-
-### Installation
+### Installation locally
 
 1. Clone the repository:
 \`\`\`bash
