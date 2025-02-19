@@ -1,8 +1,8 @@
 import { pdfjs } from 'react-pdf'
 import '@/utils/pdfWorker'
 
-const API_KEY = 'ak-103f9a8168df4f9fa8e3b336b1997082'
-const USER_ID = 'irzkK8askqMXXt0WCpEm8Y209xa2'
+const API_KEY = process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY
+const USER_ID = process.env.NEXT_PUBLIC_PLAY_AI_USER_ID
 const API_URL = 'https://api.play.ai/v1/tts/stream'
 const AGENT_API_URL = 'https://api.play.ai/v1/agents'
 
