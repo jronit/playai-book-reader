@@ -15,15 +15,5 @@
       "source": "/api/:path*",
       "destination": "/api/:path*"
     }
-  ],
-  "env": {
-    "NEXT_PUBLIC_PLAY_AI_SECRET_KEY": "@play_ai_secret_key",
-    "NEXT_PUBLIC_PLAY_AI_USER_ID": "@play_ai_user_id"
-  },
-  "build": {
-    "env": {
-      "NEXT_PUBLIC_PLAY_AI_SECRET_KEY": "@play_ai_secret_key",
-      "NEXT_PUBLIC_PLAY_AI_USER_ID": "@play_ai_user_id"
-    }
-  }
+  ]
 } 
