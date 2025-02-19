@@ -38,11 +38,11 @@ In addition to the audio playback, you can initiate a chat with a Voice Agent to
 - WebSocket integration for real-time AI communication
 
 
-### Installation
+## Installation
 
 Deployed on Replit @https://playai-book-reader-ronitjain5.replit.app/ 
 
-# or
+### or
 Install locally 
 
 1. Clone the repository:
@@ -54,7 +54,7 @@ cd playai-book-reader
 2. Install dependencies:
 \`\`\`bash
 npm install
-# or
+### or
 yarn install
 \`\`\`
 
@@ -67,7 +67,7 @@ NEXT_PUBLIC_PLAY_AI_USER_ID=your_user_id_here
 4. Start the development server:
 \`\`\`bash
 npm run dev
-# or
+### or
 yarn dev
 \`\`\`
 
