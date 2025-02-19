@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
-const API_KEY = process.env.NEXT_PUBLIC_PLAY_AI_SECRET_KEY
-const USER_ID = process.env.NEXT_PUBLIC_PLAY_AI_USER_ID
+const API_KEY = 'ak-c3eaeadb838944cfaec82e41129a71f3'
+const USER_ID = '5jcbndHqeMg9yRPw95Ti5cVfNus2'
 const API_URL = 'https://api.play.ai/v1/tts/stream'
 
 export async function POST(request: Request) {
