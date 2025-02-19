@@ -7,6 +7,7 @@ import VoiceSelector from '@/components/VoiceSelector'
 import PDFViewer from '@/components/PDFViewer'
 import CurrentPDF from '@/components/CurrentPDF'
 import AudioPlayer from '@/components/AudioPlayer'
+import PlayAIWidget from '@/components/PlayAIWidget'
 
 const sampleVoices: Voice[] = [
   {
@@ -47,13 +48,12 @@ const initialState: BookReaderState = {
   isPlaying: false,
   selectedVoice: null,
   pdfUrl: null,
+  playbackSpeed: 1,
 }
 
 export default function Home() {
-  const [state, setState] = useState<BookReaderState>({
-    ...initialState,
-    playbackSpeed: 1,
-  })
+  const [state, setState] = useState<BookReaderState>(initialState)
+  const [currentPdfContent, setCurrentPdfContent] = useState<string>('')
 
   const handleUpload = (file: File) => {
     const url = URL.createObjectURL(file);
@@ -63,6 +63,8 @@ export default function Home() {
       currentPage: 1,
       totalPages: 0 
     }));
+    // Reset content when new file is uploaded
+    setCurrentPdfContent('');
   }
 
   const handlePageChange = (newPage: number) => {
@@ -71,6 +73,11 @@ export default function Home() {
 
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setState(prev => ({ ...prev, totalPages: numPages }))
+  }
+
+  // Function to update PDF content
+  const handlePageTextContent = (text: string) => {
+    setCurrentPdfContent(text);
   }
 
   return (
@@ -121,6 +128,7 @@ export default function Home() {
                 onPageChange={handlePageChange}
                 totalPages={state.totalPages}
                 onDocumentLoadSuccess={handleDocumentLoadSuccess}
+                onPageTextContent={handlePageTextContent}
               />
             </div>
 
@@ -153,6 +161,11 @@ export default function Home() {
           </div>
         </div>
       </div>
+      <PlayAIWidget 
+        currentPage={state.currentPage}
+        totalPages={state.totalPages}
+        pdfContent={currentPdfContent}
+      />
     </div>
   )
 } 

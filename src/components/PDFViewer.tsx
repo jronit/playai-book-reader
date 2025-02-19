@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Document, Page } from 'react-pdf'
+import { useState, useEffect, useRef } from 'react'
+import { Document, Page, pdfjs } from 'react-pdf'
 import '@/utils/pdfWorker'
 
 interface PDFViewerProps {
@@ -10,6 +10,7 @@ interface PDFViewerProps {
   onPageChange: (page: number) => void
   totalPages: number
   onDocumentLoadSuccess: ({ numPages }: { numPages: number }) => void
+  onPageTextContent?: (text: string) => void
 }
 
 export default function PDFViewer({
@@ -18,11 +19,14 @@ export default function PDFViewer({
   onPageChange,
   totalPages,
   onDocumentLoadSuccess,
+  onPageTextContent,
 }: PDFViewerProps) {
   const [pageWidth, setPageWidth] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [containerHeight, setContainerHeight] = useState<number>(0)
+  const pdfDocRef = useRef<any>(null)
+  const extractionTimeout = useRef<NodeJS.Timeout>()
 
   // Reference to measure the container width and height
   const measureContainer = (node: HTMLDivElement) => {
@@ -46,6 +50,59 @@ export default function PDFViewer({
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Load PDF document once
+  useEffect(() => {
+    if (pdfUrl) {
+      setLoading(true)
+      pdfjs.getDocument(pdfUrl).promise
+        .then(pdf => {
+          pdfDocRef.current = pdf
+          setLoading(false)
+        })
+        .catch(error => {
+          console.error('Error loading PDF:', error)
+          setError('Failed to load PDF. Please try again.')
+          setLoading(false)
+        })
+    }
+    
+    return () => {
+      if (extractionTimeout.current) {
+        clearTimeout(extractionTimeout.current)
+      }
+    }
+  }, [pdfUrl])
+
+  // Extract text with debounce
+  useEffect(() => {
+    if (extractionTimeout.current) {
+      clearTimeout(extractionTimeout.current)
+    }
+
+    extractionTimeout.current = setTimeout(async () => {
+      if (!pdfDocRef.current || !onPageTextContent) return;
+      
+      try {
+        const page = await pdfDocRef.current.getPage(currentPage)
+        const textContent = await page.getTextContent()
+        
+        // Improved text extraction with better formatting
+        const text = textContent.items
+          .map((item: any) => item.str)
+          .join(' ')
+          .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+          .replace(/[\n\r]+/g, ' ') // Replace newlines with space
+          .trim();
+
+        if (text.length > 0) {
+          onPageTextContent(text)
+        }
+      } catch (error) {
+        console.error('Error extracting text:', error)
+      }
+    }, 300) // Reduced debounce time for faster response
+  }, [currentPage, onPageTextContent])
 
   const handleLoadError = (error: Error) => {
     console.error('Error loading PDF:', error)
@@ -98,8 +155,8 @@ export default function PDFViewer({
         <Document
           file={pdfUrl}
           onLoadSuccess={(pdf) => {
-            setLoading(false)
             onDocumentLoadSuccess(pdf)
+            pdfDocRef.current = pdf
           }}
           onLoadError={handleLoadError}
           loading={
@@ -117,7 +174,7 @@ export default function PDFViewer({
               pageNumber={currentPage}
               width={pageWidth}
               className="max-h-[calc(100vh-400px)]" // Further reduced max height
-              renderTextLayer={false}
+              renderTextLayer={true}
               renderAnnotationLayer={false}
               loading={null}
               scale={0.8} // Reduced scale from 0.9 to 0.8
